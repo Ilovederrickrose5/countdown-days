@@ -4,14 +4,16 @@
     hover-class="card-hover"
     hover-stay-time="80"
     :style="{ borderLeftColor: event.color }"
-    @click="$emit('tap', event)"
-    @longpress="$emit('longpress', event)"
+    @click="$emit('select', event)"
   >
     <view class="card-main">
       <view class="title-row">
         <text class="title">{{ event.title }}</text>
         <text v-if="event.pinned" class="badge pin">置顶</text>
         <text v-if="event.repeat === 'yearly'" class="badge">每年</text>
+        <view class="more" @click.stop="$emit('menu', event)">
+          <text class="more-dots">···</text>
+        </view>
       </view>
       <text class="date">{{ event.view.date }} {{ event.view.weekday }}</text>
       <text v-if="event.note" class="note">{{ event.note }}</text>
@@ -23,7 +25,7 @@
         <text
           class="days-value"
           :class="`is-${event.view.status}`"
-          :style="event.view.status === 'past' ? {} : { color: event.color }"
+          :style="event.view.status === 'past' || event.view.status === 'today' ? {} : { color: event.color }"
         >
           {{ event.view.status === 'today' ? '今天' : event.view.days }}
         </text>
@@ -41,7 +43,7 @@ defineProps({
   }
 })
 
-defineEmits(['tap', 'longpress'])
+defineEmits(['select', 'menu'])
 </script>
 
 <style scoped lang="scss">
@@ -78,6 +80,23 @@ defineEmits(['tap', 'longpress'])
   font-weight: 600;
   color: $app-text;
   margin-right: 12rpx;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.more {
+  margin-left: auto;
+  padding-left: 16rpx;
+  line-height: 1;
+}
+
+.more-dots {
+  font-size: 34rpx;
+  color: #b0b6c3;
+  letter-spacing: 2rpx;
 }
 
 .badge {

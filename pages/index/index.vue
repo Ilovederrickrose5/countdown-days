@@ -1,6 +1,9 @@
 <template>
   <view class="page">
     <view class="status-bar"></view>
+    <!-- #ifdef MP-WEIXIN -->
+    <view class="weixin-nav"></view>
+    <!-- #endif -->
 
     <view class="header">
       <text class="title">时光倒数</text>
@@ -12,8 +15,8 @@
         v-for="item in list"
         :key="item.id"
         :event="item"
-        @tap="handleTap"
-        @longpress="handleLongPress"
+        @select="handleTap"
+        @menu="handleMore"
       />
 
       <view v-if="list.length === 0" class="empty">
@@ -49,7 +52,6 @@ const summary = computed(() => {
 
 let ticker = null
 let lastDay = ''
-let suppressTap = false
 
 function startTicker() {
   stopTicker()
@@ -88,16 +90,10 @@ function navigateToEdit(item) {
 }
 
 function handleTap(item) {
-  if (suppressTap) return
   navigateToEdit(item)
 }
 
-function handleLongPress(item) {
-  suppressTap = true
-  setTimeout(() => {
-    suppressTap = false
-  }, 500)
-
+function handleMore(item) {
   uni.showActionSheet({
     itemList: [item.pinned ? '取消置顶' : '置顶', '编辑', '删除'],
     success: res => {
@@ -138,6 +134,10 @@ function confirmDelete(item) {
 
 .status-bar {
   height: var(--status-bar-height);
+}
+
+.weixin-nav {
+  height: 44px;
 }
 
 .header {

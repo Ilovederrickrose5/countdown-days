@@ -127,7 +127,7 @@ onLoad(options => {
   const item = getById(decodeURIComponent(id))
   if (!item) {
     uni.showToast({ title: '记录不存在', icon: 'none' })
-    setTimeout(() => uni.navigateBack(), 600)
+    setTimeout(goBack, 600)
     return
   }
 
@@ -196,7 +196,13 @@ function save() {
     toast('已添加')
   }
 
-  setTimeout(() => uni.navigateBack(), 400)
+  setTimeout(goBack, 400)
+}
+
+function goBack() {
+  uni.navigateBack({
+    fail: () => uni.reLaunch({ url: '/pages/index/index' })
+  })
 }
 
 function confirmDelete() {
@@ -209,7 +215,7 @@ function confirmDelete() {
       if (!res.confirm) return
       removeEvent(editingId.value)
       uni.showToast({ title: '已删除', icon: 'none' })
-      setTimeout(() => uni.navigateBack(), 400)
+      setTimeout(goBack, 400)
     }
   })
 }
