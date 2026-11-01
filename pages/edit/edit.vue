@@ -17,14 +17,14 @@
         <view
           class="segment-item"
           :class="{ active: form.type === 'countdown' }"
-          @click="form.type = 'countdown'"
+          @click="setType('countdown')"
         >
           倒数日
         </view>
         <view
           class="segment-item"
           :class="{ active: form.type === 'count-up' }"
-          @click="form.type = 'count-up'"
+          @click="setType('count-up')"
         >
           纪念日
         </view>
@@ -35,11 +35,13 @@
     </view>
 
     <view class="section">
-      <text class="label">{{ form.type === 'countdown' ? '目标日期' : '起始日期' }}</text>
+      <text class="label">{{ dateLabel }}</text>
+      <!-- 农历数据从 1900-01-31 开始，避免选到无法转换的日期 -->
       <picker
+        v-if="!useLunar"
         mode="date"
         :value="form.targetDate"
-        start="1900-01-01"
+        start="1900-01-31"
         end="2100-12-31"
         @change="onDateChange"
       >
@@ -48,6 +50,20 @@
           <text class="picker-arrow">›</text>
         </view>
       </picker>
+      <picker
+        v-else
+        mode="multiSelector"
+        :range="LUNAR_RANGE"
+        :value="lunarIndexes"
+        @change="onLunarChange"
+      >
+        <view class="picker">
+          <text class="picker-value">{{ dateText }}</text>
+          <text class="picker-arrow">›</text>
+        </view>
+      </picker>
+
+      <text v-if="useLunar" class="hint">每年按农历重复，适合农历生日和传统节日</text>
       <text v-if="preview" class="preview">{{ preview }}</text>
 
       <view v-if="form.type === 'countdown'" class="switch-row">
@@ -61,7 +77,65 @@
           @change="onRepeatChange"
         />
       </view>
+
+      <view v-if="form.type === 'countdown' && form.repeat === 'yearly'" class="calendar-row">
+        <text class="switch-title">历法</text>
+        <view class="segment mini">
+          <view
+            class="segment-item"
+            :class="{ active: form.calendar === 'solar' }"
+            @click="setCalendar('solar')"
+          >
+            公历
+          </view>
+          <view
+            class="segment-item"
+            :class="{ active: form.calendar === 'lunar' }"
+            @click="setCalendar('lunar')"
+          >
+            农历
+          </view>
+        </view>
+      </view>
     </view>
+
+    <!-- 小程序暂未接入订阅消息，隐藏提醒设置，避免出现无法生效的功能 -->
+    <!-- #ifndef MP -->
+    <view v-if="form.type === 'countdown'" class="section">
+      <text class="label">提醒</text>
+      <view class="chips">
+        <view
+          v-for="option in REMINDER_OPTIONS"
+          :key="String(option.value)"
+          class="chip"
+          :class="{ active: form.reminderDays === option.value }"
+          @click="form.reminderDays = option.value"
+        >
+          {{ option.label }}
+        </view>
+      </view>
+
+      <view v-if="form.reminderDays !== null" class="reminder-time">
+        <text class="switch-title">提醒时间</text>
+        <picker mode="time" :value="form.reminderTime" @change="onReminderTimeChange">
+          <view class="time-picker">
+            <text class="time-value">{{ form.reminderTime }}</text>
+            <text class="picker-arrow">›</text>
+          </view>
+        </picker>
+      </view>
+
+      <text v-if="form.reminderDays === null" class="hint">开启后，到点提醒你</text>
+      <!-- #ifdef APP-PLUS -->
+      <text v-if="form.reminderDays !== null" class="hint">App 会在设定时间发送本地通知</text>
+      <!-- #endif -->
+      <!-- #ifdef H5 -->
+      <text v-if="form.reminderDays !== null" class="hint">H5 仅在首页打开时提醒，无法后台通知</text>
+      <!-- #endif -->
+
+      <text v-if="reminderPreview" class="preview">{{ reminderPreview }}</text>
+    </view>
+    <!-- #endif -->
 
     <view class="section">
       <text class="label">颜色</text>
@@ -103,11 +177,22 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { useEvents } from '@/composables/useEvents'
+import { useReminders } from '@/composables/useReminders'
 import { getEventView, todayString, weekdayOfDateString } from '@/utils/date'
+import {
+  formatLunar,
+  LUNAR_DAY_NAMES,
+  LUNAR_MONTH_NAMES,
+  nextLunarSolarDate,
+  solarToLunar
+} from '@/utils/lunar'
+import { formatReminderAt, nextReminderAt, REMINDER_OPTIONS } from '@/utils/reminder'
 
 const COLORS = ['#5b8def', '#f2668b', '#f5a524', '#38bdf8', '#34c77b']
+const LUNAR_RANGE = [LUNAR_MONTH_NAMES, LUNAR_DAY_NAMES]
 
-const { getById, addEvent, updateEvent, removeEvent } = useEvents()
+const { getById, addEvent, updateEvent, removeEvent, snapshot } = useEvents()
+const { syncApp } = useReminders()
 
 const isEdit = ref(false)
 const editingId = ref('')
@@ -116,6 +201,11 @@ const form = reactive({
   type: 'countdown',
   targetDate: todayString(),
   repeat: 'none',
+  calendar: 'solar',
+  lunarMonth: 1,
+  lunarDay: 1,
+  reminderDays: null,
+  reminderTime: '09:00',
   color: COLORS[0],
   note: ''
 })
@@ -131,11 +221,17 @@ onLoad(options => {
     return
   }
 
+  const derived = solarToLunar(item.targetDate)
   Object.assign(form, {
     title: item.title,
     type: item.type,
     targetDate: item.targetDate,
     repeat: item.repeat,
+    calendar: item.calendar === 'lunar' ? 'lunar' : 'solar',
+    lunarMonth: item.lunarMonth || (derived ? derived.month : 1),
+    lunarDay: item.lunarDay || (derived ? derived.day : 1),
+    reminderDays: item.reminderDays ?? null,
+    reminderTime: item.reminderTime || '09:00',
     color: item.color,
     note: item.note
   })
@@ -144,30 +240,108 @@ onLoad(options => {
   uni.setNavigationBarTitle({ title: '编辑纪念日' })
 })
 
+const useLunar = computed(
+  () => form.type === 'countdown' && form.repeat === 'yearly' && form.calendar === 'lunar'
+)
+
+const lunarIndexes = computed(() => [form.lunarMonth - 1, form.lunarDay - 1])
+
+const lunarText = computed(() =>
+  formatLunar({ month: form.lunarMonth, day: form.lunarDay, isLeap: false })
+)
+
+const dateLabel = computed(() => {
+  if (useLunar.value) return '农历日期'
+  return form.type === 'countdown' ? '目标日期' : '起始日期'
+})
+
 const dateText = computed(() => {
+  if (useLunar.value) return `农历${lunarText.value}`
   if (!form.targetDate) return '请选择日期'
   return `${form.targetDate} ${weekdayOfDateString(form.targetDate)}`
 })
 
 const preview = computed(() => {
-  if (!form.targetDate || !form.title.trim()) return ''
+  if (!form.title.trim()) return ''
+  if (!useLunar.value && !form.targetDate) return ''
+
   const view = getEventView({
     ...form,
-    repeat: form.type === 'count-up' ? 'none' : form.repeat
+    repeat: form.type === 'count-up' ? 'none' : form.repeat,
+    calendar: useLunar.value ? 'lunar' : 'solar'
   })
-  if (view.status === 'today') return '就是今天'
-  if (view.status === 'future') return `还有 ${view.days} 天`
-  if (view.status === 'start') return '今天是第 1 天'
-  if (view.status === 'elapsed') return `已经第 ${view.days} 天`
-  return `已过去 ${view.days} 天`
+
+  let text
+  if (view.status === 'today') text = '就是今天'
+  else if (view.status === 'future') text = `还有 ${view.days} 天`
+  else if (view.status === 'start') text = '今天是第 1 天'
+  else if (view.status === 'elapsed') text = `已经第 ${view.days} 天`
+  else text = `已过去 ${view.days} 天`
+
+  return useLunar.value ? `${text} · ${view.date}` : text
 })
+
+const reminderPreview = computed(() => {
+  if (form.reminderDays === null) return ''
+  const at = nextReminderAt({
+    ...form,
+    repeat: form.type === 'count-up' ? 'none' : form.repeat,
+    calendar: useLunar.value ? 'lunar' : 'solar'
+  })
+  return at ? `下次提醒：${formatReminderAt(at)}` : '这个提醒时间已经过了'
+})
+
+function setType(type) {
+  if (form.type === type) return
+  if (type === 'count-up' && useLunar.value) {
+    const solar = nextLunarSolarDate(form.lunarMonth, form.lunarDay)
+    if (solar) form.targetDate = solar
+  }
+  form.type = type
+  if (type === 'count-up') {
+    form.repeat = 'none'
+    form.calendar = 'solar'
+  }
+}
 
 function onDateChange(e) {
   form.targetDate = e.detail.value
 }
 
+function onReminderTimeChange(e) {
+  const value = String(e.detail.value || '')
+  if (/^\d{2}:\d{2}/.test(value)) form.reminderTime = value.slice(0, 5)
+}
+
+function onLunarChange(e) {
+  const [monthIndex, dayIndex] = e.detail.value.map(Number)
+  form.lunarMonth = monthIndex + 1
+  form.lunarDay = dayIndex + 1
+}
+
+function setCalendar(calendar) {
+  if (form.calendar === calendar) return
+  if (calendar === 'lunar') {
+    const lunar = solarToLunar(form.targetDate)
+    if (lunar) {
+      form.lunarMonth = lunar.month
+      form.lunarDay = lunar.day
+    }
+  } else {
+    const solar = nextLunarSolarDate(form.lunarMonth, form.lunarDay)
+    if (solar) form.targetDate = solar
+  }
+  form.calendar = calendar
+}
+
 function onRepeatChange(e) {
-  form.repeat = e.detail.value ? 'yearly' : 'none'
+  const yearly = Boolean(e.detail.value)
+  if (!yearly && useLunar.value) {
+    const solar = nextLunarSolarDate(form.lunarMonth, form.lunarDay)
+    if (solar) form.targetDate = solar
+  }
+  form.repeat = yearly ? 'yearly' : 'none'
+  if (!yearly) form.calendar = 'solar'
 }
 
 function toast(title) {
@@ -177,15 +351,27 @@ function toast(title) {
 function save() {
   const title = form.title.trim()
   if (!title) return toast('请输入名称')
-  if (!form.targetDate) return toast('请选择日期')
+  if (!useLunar.value && !form.targetDate) return toast('请选择日期')
 
+  const lunar = useLunar.value
   const payload = {
     title,
     type: form.type,
     targetDate: form.targetDate,
     repeat: form.type === 'count-up' ? 'none' : form.repeat,
+    calendar: lunar ? 'lunar' : 'solar',
+    lunarMonth: lunar ? form.lunarMonth : null,
+    lunarDay: lunar ? form.lunarDay : null,
+    reminderDays: form.type === 'count-up' ? null : form.reminderDays,
+    reminderTime: form.reminderTime,
     color: form.color,
     note: form.note.trim()
+  }
+
+  // 农历事件不依赖具体年份，存下最近一次的公历日期作为兜底
+  if (lunar) {
+    const solar = nextLunarSolarDate(form.lunarMonth, form.lunarDay)
+    if (solar) payload.targetDate = solar
   }
 
   if (isEdit.value) {
@@ -195,6 +381,7 @@ function save() {
     addEvent(payload)
     toast('已添加')
   }
+  syncApp(snapshot())
 
   setTimeout(goBack, 400)
 }
@@ -214,6 +401,7 @@ function confirmDelete() {
     success: res => {
       if (!res.confirm) return
       removeEvent(editingId.value)
+      syncApp(snapshot())
       uni.showToast({ title: '已删除', icon: 'none' })
       setTimeout(goBack, 400)
     }
@@ -225,7 +413,9 @@ function confirmDelete() {
 .page {
   box-sizing: border-box;
   min-height: 100vh;
-  padding: 28rpx 32rpx calc(200rpx + env(safe-area-inset-bottom));
+  padding: 28rpx 32rpx 200rpx;
+  padding-bottom: calc(200rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(200rpx + env(safe-area-inset-bottom));
   background: $app-bg;
 }
 
@@ -329,6 +519,62 @@ function confirmDelete() {
   margin-top: 6rpx;
 }
 
+.calendar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+}
+
+.segment.mini {
+  width: 260rpx;
+  padding: 4rpx;
+}
+
+.segment.mini .segment-item {
+  padding: 12rpx 0;
+  font-size: 26rpx;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 14rpx 26rpx;
+  margin: 0 14rpx 14rpx 0;
+  font-size: 26rpx;
+  color: $app-text-secondary;
+  background: #f5f6fa;
+  border-radius: 999rpx;
+}
+
+.chip.active {
+  color: #fff;
+  background: $app-primary;
+}
+
+.reminder-time {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8rpx;
+}
+
+.time-picker {
+  display: flex;
+  align-items: center;
+  padding: 12rpx 20rpx;
+  background: #f5f6fa;
+  border-radius: 12rpx;
+}
+
+.time-value {
+  font-size: 28rpx;
+  color: $app-text;
+}
+
 .colors {
   display: flex;
 }
@@ -383,7 +629,9 @@ function confirmDelete() {
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 20rpx 32rpx calc(20rpx + env(safe-area-inset-bottom));
+  padding: 20rpx 32rpx;
+  padding-bottom: calc(20rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
   background: rgba(244, 245, 249, 0.96);
 }
 

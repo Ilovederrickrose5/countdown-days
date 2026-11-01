@@ -10,6 +10,7 @@
       <view class="title-row">
         <text class="title">{{ event.title }}</text>
         <text v-if="event.pinned" class="badge pin">置顶</text>
+        <text v-if="event.calendar === 'lunar'" class="badge">农历</text>
         <text v-if="event.repeat === 'yearly'" class="badge">每年</text>
         <view class="more" @click.stop="$emit('menu', event)">
           <text class="more-dots">···</text>

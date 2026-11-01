@@ -69,5 +69,28 @@ export function useEvents() {
     persist()
   }
 
-  return { list, reload, refresh, getById, addEvent, updateEvent, removeEvent, togglePin }
+  function snapshot() {
+    return events.value.map(item => ({ ...item }))
+  }
+
+  // 以 id 为键合并导入数据，重复记录用导入内容覆盖
+  function mergeEvents(incoming) {
+    const merged = new Map(events.value.map(item => [item.id, item]))
+    incoming.forEach(item => merged.set(item.id, { ...merged.get(item.id), ...item }))
+    events.value = Array.from(merged.values())
+    persist()
+  }
+
+  return {
+    list,
+    reload,
+    refresh,
+    getById,
+    addEvent,
+    updateEvent,
+    removeEvent,
+    togglePin,
+    snapshot,
+    mergeEvents
+  }
 }

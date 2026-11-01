@@ -1,9 +1,5 @@
 <script>
-	export default {
-		onLaunch: function() {
-			console.log('App Launch')
-		}
-	}
+	export default {}
 </script>
 
 <style lang="scss">
