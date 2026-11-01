@@ -51,6 +51,10 @@
         <text class="info-value">{{ reminderText }}</text>
       </view>
       <!-- #endif -->
+      <view v-if="item.tags && item.tags.length" class="info-row">
+        <text class="info-label">标签</text>
+        <text class="info-value">{{ item.tags.join(' · ') }}</text>
+      </view>
       <view v-if="item.note" class="info-row">
         <text class="info-label">备注</text>
         <text class="info-value note-text">{{ item.note }}</text>
@@ -59,6 +63,7 @@
 
     <view v-if="item" class="footer">
       <view class="btn ghost" @click="onPin">{{ item.pinned ? '取消置顶' : '置顶' }}</view>
+      <view class="btn ghost" @click="share">分享</view>
       <view class="btn primary" @click="edit">编辑</view>
       <view class="btn ghost danger" @click="confirmDelete">删除</view>
     </view>
@@ -67,7 +72,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow, onShareAppMessage } from '@dcloudio/uni-app'
 import { useEvents } from '@/composables/useEvents'
 import { useReminders } from '@/composables/useReminders'
 import { weekdayOfDateString } from '@/utils/date'
@@ -125,9 +130,19 @@ onShow(() => {
   uni.setNavigationBarTitle({ title: item.value.title })
 })
 
+onShareAppMessage(() => ({
+  title: item.value ? `${item.value.title} · 时光倒数` : '时光倒数',
+  path: '/pages/index/index'
+}))
+
 function edit() {
   if (!item.value) return
   uni.navigateTo({ url: `/pages/edit/edit?id=${encodeURIComponent(item.value.id)}` })
+}
+
+function share() {
+  if (!item.value) return
+  uni.navigateTo({ url: `/pages/share/share?id=${encodeURIComponent(item.value.id)}` })
 }
 
 function onPin() {
@@ -309,9 +324,14 @@ function goBack() {
 }
 
 .btn.ghost {
-  width: 168rpx;
+  width: 130rpx;
+  margin-right: 12rpx;
   color: $app-text-secondary;
   background: $app-card;
+}
+
+.btn.ghost:last-child {
+  margin-right: 0;
 }
 
 .btn.ghost.danger {
@@ -320,7 +340,7 @@ function goBack() {
 
 .btn.primary {
   flex: 1;
-  margin: 0 20rpx;
+  margin: 0 14rpx;
   font-weight: 600;
   color: #fff;
   background: $app-primary;

@@ -12,13 +12,14 @@
         本应用不收集、不上传你的个人信息和纪念日数据。所有记录仅保存在当前设备的本地缓存中。
       </text>
       <text class="paragraph">
-        卸载应用、清除小程序缓存或更换设备后，数据可能丢失。建议定期使用首页右上角菜单中的“导出数据”备份。
+        卸载应用、清除小程序缓存或更换设备后，数据可能丢失。建议定期使用首页右上角菜单或设置页中的“导出数据”备份。
       </text>
     </view>
 
     <view class="card">
       <text class="section-title">权限与用途</text>
       <text class="item">剪贴板：仅在你主动导入或导出数据时读写。</text>
+      <text class="item">相册（仅保存分享卡片）：只有你主动保存分享图片时才会请求，不会读取相册内容。</text>
       <text class="item">通知（仅 App）：用于本地提醒，拒绝后不影响记录功能。</text>
       <text class="item">本应用不接入广告、统计或第三方 SDK。</text>
     </view>

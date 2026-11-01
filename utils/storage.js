@@ -1,5 +1,5 @@
-import { nextLunarSolarDate } from './lunar'
-import { todayString } from './date'
+import { nextLunarSolarDate } from './lunar.js'
+import { todayString } from './date.js'
 
 const KEY = 'countdown_events'
 const LEGACY_KEY = 'countdown_list'
@@ -48,6 +48,17 @@ function normalizeReminder(item, type) {
   return { days: REMINDER_DAYS.includes(days) ? days : null, time: reminderTime }
 }
 
+function normalizeTags(value) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(/[\s,，]+/)
+  return Array.from(
+    new Set(
+      raw
+        .map(tag => String(tag).trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5)
+}
+
 function isRealDateString(value) {
   const match = DATE_PATTERN.exec(value)
   if (!match) return false
@@ -89,6 +100,7 @@ function normalizeEvent(item) {
     reminderDays: reminder.days,
     reminderTime: reminder.time,
     color: typeof item.color === 'string' && item.color ? item.color : DEFAULT_COLOR,
+    tags: normalizeTags(item.tags ?? item.tag),
     note: String(item.note ?? ''),
     pinned: Boolean(item.pinned),
     createdAt: Number.isFinite(legacyCreatedAt) ? legacyCreatedAt : Date.now()

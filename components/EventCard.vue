@@ -12,6 +12,13 @@
         <text v-if="event.pinned" class="badge pin">置顶</text>
         <text v-if="event.calendar === 'lunar'" class="badge">农历</text>
         <text v-if="event.repeat === 'yearly'" class="badge">每年</text>
+        <text
+          v-for="tag in (event.tags || []).slice(0, 2)"
+          :key="tag"
+          class="badge tag"
+        >
+          {{ tag }}
+        </text>
         <view class="more" @click.stop="$emit('menu', event)">
           <text class="more-dots">···</text>
         </view>
@@ -112,6 +119,11 @@ defineEmits(['select', 'menu'])
 .badge.pin {
   color: $app-primary;
   background: rgba(91, 141, 239, 0.12);
+}
+
+.badge.tag {
+  color: #6b7280;
+  background: #f5f6fa;
 }
 
 .date {

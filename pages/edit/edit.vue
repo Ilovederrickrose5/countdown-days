@@ -154,6 +154,17 @@
     </view>
 
     <view class="section">
+      <text class="label">标签（可选）</text>
+      <input
+        v-model="form.tagsText"
+        class="input"
+        placeholder="用空格分隔，例如 家人 生日"
+        placeholder-class="placeholder"
+        maxlength="40"
+      />
+    </view>
+
+    <view class="section">
       <text class="label">备注（可选）</text>
       <textarea
         v-model="form.note"
@@ -187,6 +198,7 @@ import {
   solarToLunar
 } from '@/utils/lunar'
 import { formatReminderAt, nextReminderAt, REMINDER_OPTIONS } from '@/utils/reminder'
+import { templateForm } from '@/utils/templates'
 
 const COLORS = ['#5b8def', '#f2668b', '#f5a524', '#38bdf8', '#34c77b']
 const LUNAR_RANGE = [LUNAR_MONTH_NAMES, LUNAR_DAY_NAMES]
@@ -207,12 +219,17 @@ const form = reactive({
   reminderDays: null,
   reminderTime: '09:00',
   color: COLORS[0],
+  tagsText: '',
   note: ''
 })
 
 onLoad(options => {
   const id = options && options.id
-  if (!id) return
+  if (!id) {
+    const template = templateForm(options && options.template)
+    if (template) applyTemplate(template)
+    return
+  }
 
   const item = getById(decodeURIComponent(id))
   if (!item) {
@@ -233,12 +250,41 @@ onLoad(options => {
     reminderDays: item.reminderDays ?? null,
     reminderTime: item.reminderTime || '09:00',
     color: item.color,
+    tagsText: Array.isArray(item.tags) ? item.tags.join(' ') : '',
     note: item.note
   })
   editingId.value = item.id
   isEdit.value = true
   uni.setNavigationBarTitle({ title: '编辑纪念日' })
 })
+
+function applyTemplate(template) {
+  Object.assign(form, {
+    title: template.title || '',
+    type: template.type || 'countdown',
+    targetDate: template.targetDate || todayString(),
+    repeat: template.repeat || 'none',
+    calendar: template.calendar || 'solar',
+    lunarMonth: template.lunarMonth || 1,
+    lunarDay: template.lunarDay || 1,
+    reminderDays: null,
+    reminderTime: '09:00',
+    color: template.color || COLORS[0],
+    tagsText: Array.isArray(template.tags) ? template.tags.join(' ') : '',
+    note: template.note || ''
+  })
+}
+
+function parseTags(value) {
+  return Array.from(
+    new Set(
+      String(value || '')
+        .split(/[\s,，]+/)
+        .map(tag => tag.trim())
+        .filter(Boolean)
+    )
+  ).slice(0, 5)
+}
 
 const useLunar = computed(
   () => form.type === 'countdown' && form.repeat === 'yearly' && form.calendar === 'lunar'
@@ -365,6 +411,7 @@ function save() {
     reminderDays: form.type === 'count-up' ? null : form.reminderDays,
     reminderTime: form.reminderTime,
     color: form.color,
+    tags: parseTags(form.tagsText),
     note: form.note.trim()
   }
 

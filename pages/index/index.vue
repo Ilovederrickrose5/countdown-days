@@ -10,59 +10,143 @@
         <text class="title">时光倒数</text>
         <text class="subtitle">{{ summary }}</text>
       </view>
-      <view class="header-tools" @click="openTools">
+      <view class="header-tools" hover-class="tool-hover" @click="openTools">
         <text class="header-dots">···</text>
       </view>
     </view>
 
-    <view v-if="list.length" class="filters">
-      <view
-        v-for="item in FILTERS"
-        :key="item.key"
-        class="filter"
-        :class="{ active: filter === item.key }"
-        @click="filter = item.key"
-      >
-        {{ item.label }}
+    <template v-if="list.length">
+      <view class="search-row">
+        <view class="search-box">
+          <view class="search-icon"></view>
+          <input
+            v-model="keyword"
+            class="search-input"
+            placeholder="搜索名称、备注或标签"
+            placeholder-class="placeholder"
+            confirm-type="search"
+          />
+          <text v-if="keyword" class="search-clear" @click="keyword = ''">×</text>
+        </view>
+        <view class="view-toggle">
+          <view
+            v-for="mode in VIEW_MODES"
+            :key="mode.key"
+            class="view-item"
+            :class="{ active: viewMode === mode.key }"
+            @click="viewMode = mode.key"
+          >
+            {{ mode.label }}
+          </view>
+        </view>
       </view>
-    </view>
 
-    <view class="list">
-      <EventCard
-        v-for="item in visibleList"
-        :key="item.id"
-        :event="item"
+      <view class="filters">
+        <view
+          v-for="item in FILTERS"
+          :key="item.key"
+          class="filter"
+          :class="{ active: filter === item.key }"
+          @click="filter = item.key"
+        >
+          {{ item.label }}
+        </view>
+      </view>
+
+      <view v-if="allTags.length" class="tag-row">
+        <view
+          class="tag-chip"
+          :class="{ active: !activeTag }"
+          @click="activeTag = ''"
+        >
+          全部标签
+        </view>
+        <view
+          v-for="tag in allTags"
+          :key="tag"
+          class="tag-chip"
+          :class="{ active: activeTag === tag }"
+          @click="activeTag = activeTag === tag ? '' : tag"
+        >
+          {{ tag }}
+        </view>
+      </view>
+
+      <view v-if="viewMode === 'list'" class="list">
+        <EventCard
+          v-for="item in visibleList"
+          :key="item.id"
+          :event="item"
+          @select="handleTap"
+          @menu="handleMore"
+        />
+        <view v-if="!visibleList.length" class="empty compact">
+          <text class="empty-title">没有匹配的记录</text>
+          <text class="empty-desc">换个关键词或筛选条件试试</text>
+        </view>
+      </view>
+
+      <MonthCalendar
+        v-else-if="viewMode === 'calendar'"
+        :events="visibleList"
+        :selected-date="selectedDate"
+        @pick="selectedDate = $event"
         @select="handleTap"
         @menu="handleMore"
       />
 
-      <view v-if="list.length === 0" class="empty">
-        <view class="empty-circle"><text class="empty-plus">+</text></view>
-        <text class="empty-title">还没有纪念日</text>
-        <text class="empty-desc">把值得记住的日子留在这里</text>
-        <view class="empty-btn" @click="navigateToCreate">添加第一个纪念日</view>
+      <view v-else class="list">
+        <view v-for="group in timelineGroups" :key="group.key" class="timeline-group">
+          <view class="timeline-head">
+            <text class="timeline-month">{{ group.label }}</text>
+            <text class="timeline-count">{{ group.items.length }} 个</text>
+          </view>
+          <EventCard
+            v-for="item in group.items"
+            :key="item.id"
+            :event="item"
+            @select="handleTap"
+            @menu="handleMore"
+          />
+        </view>
+        <view v-if="!timelineGroups.length" class="empty compact">
+          <text class="empty-title">没有匹配的记录</text>
+          <text class="empty-desc">换个关键词或筛选条件试试</text>
+        </view>
       </view>
+    </template>
 
-      <view v-else-if="visibleList.length === 0" class="empty compact">
-        <text class="empty-title">这个分类下还没有记录</text>
-        <text class="empty-desc">切换筛选看看其他日子</text>
+    <view v-else class="empty">
+      <view class="empty-circle"><text class="empty-plus">+</text></view>
+      <text class="empty-title">还没有纪念日</text>
+      <text class="empty-desc">把值得记住的日子留在这里</text>
+      <TemplateGrid @select="useTemplate" />
+      <view class="empty-btn" hover-class="btn-hover" @click="navigateToCreate">
+        自定义添加
       </view>
     </view>
 
-    <view class="fab" @click="navigateToCreate">
+    <view class="fab" hover-class="fab-hover" @click="navigateToCreate">
       <text class="fab-plus">+</text>
     </view>
+
+    <GuideOverlay :visible="showGuide" @skip="finishGuide" @finish="finishGuide" />
   </view>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onShow, onHide, onUnload } from '@dcloudio/uni-app'
+import { computed, ref, watch } from 'vue'
+import { onShow, onHide, onUnload, onShareAppMessage, onShareTimeline } from '@dcloudio/uni-app'
 import { useEvents } from '@/composables/useEvents'
 import { useReminders } from '@/composables/useReminders'
 import { reminderMessage } from '@/utils/reminder'
-import { sanitizeEvents } from '@/utils/storage'
+import { buildExportPayload, parseImportText } from '@/utils/importExport'
+import { consumeGuideRequest, hasSeenGuide, markGuideSeen } from '@/utils/onboarding'
+import { todayString } from '@/utils/date'
 import EventCard from '@/components/EventCard.vue'
+import MonthCalendar from '@/components/MonthCalendar.vue'
+import TemplateGrid from '@/components/TemplateGrid.vue'
+import GuideOverlay from '@/components/GuideOverlay.vue'
 
 const FILTERS = [
   { key: 'all', label: '全部' },
@@ -71,10 +155,21 @@ const FILTERS = [
   { key: 'past', label: '已过去' }
 ]
 
+const VIEW_MODES = [
+  { key: 'list', label: '列表' },
+  { key: 'calendar', label: '日历' },
+  { key: 'timeline', label: '时间轴' }
+]
+
 const { list, reload, refresh, togglePin, removeEvent, snapshot, mergeEvents } = useEvents()
 const { syncAll, stop } = useReminders()
 
 const filter = ref('all')
+const activeTag = ref('')
+const keyword = ref('')
+const viewMode = ref('list')
+const selectedDate = ref(todayString())
+const showGuide = ref(false)
 
 const summary = computed(() => {
   const count = list.value.length
@@ -85,14 +180,60 @@ const summary = computed(() => {
   return todayCount ? `共 ${count} 个日子 · 今天有 ${todayCount} 个` : `共 ${count} 个日子`
 })
 
+const allTags = computed(() => {
+  const tags = new Set()
+  list.value.forEach(item => {
+    const itemTags = item.tags || []
+    itemTags.forEach(tag => tags.add(tag))
+  })
+  return Array.from(tags).slice(0, 12)
+})
+
+watch(allTags, tags => {
+  if (activeTag.value && !tags.includes(activeTag.value)) activeTag.value = ''
+})
+
 const visibleList = computed(() => {
-  if (filter.value === 'all') return list.value
-  if (filter.value === 'past') return list.value.filter(item => item.view.status === 'past')
-  return list.value.filter(item => item.type === filter.value)
+  const kw = keyword.value.trim().toLowerCase()
+  return list.value.filter(item => {
+    if (filter.value === 'past') {
+      if (item.view.status !== 'past') return false
+    } else if (filter.value !== 'all' && item.type !== filter.value) {
+      return false
+    }
+    if (activeTag.value && !(item.tags || []).includes(activeTag.value)) return false
+    if (!kw) return true
+    const tags = Array.isArray(item.tags) ? item.tags.join(' ') : ''
+    return `${item.title} ${item.note || ''} ${tags}`.toLowerCase().includes(kw)
+  })
+})
+
+const timelineGroups = computed(() => {
+  const sorted = [...visibleList.value].sort((a, b) => {
+    if (a.view.date === b.view.date) return a.title.localeCompare(b.title, 'zh')
+    return a.view.date.localeCompare(b.view.date)
+  })
+  const groups = []
+  sorted.forEach(item => {
+    const key = item.view.date ? item.view.date.slice(0, 7) : 'invalid'
+    let group = groups.find(entry => entry.key === key)
+    if (!group) {
+      group = { key, label: formatMonthLabel(key), items: [] }
+      groups.push(group)
+    }
+    group.items.push(item)
+  })
+  return groups
 })
 
 let ticker = null
 let lastDay = ''
+
+function formatMonthLabel(key) {
+  if (key === 'invalid') return '日期异常'
+  const [year, month] = key.split('-')
+  return `${year}年${Number(month)}月`
+}
 
 function startTicker() {
   stopTicker()
@@ -116,7 +257,13 @@ function stopTicker() {
 
 onShow(() => {
   reload()
-  if (!list.value.length) filter.value = 'all'
+  if (!list.value.length) {
+    filter.value = 'all'
+    keyword.value = ''
+    activeTag.value = ''
+  }
+  const guideRequested = consumeGuideRequest()
+  if (guideRequested || (!list.value.length && !hasSeenGuide())) showGuide.value = true
   startTicker()
   syncAll(list.value, notifyDue)
 })
@@ -130,6 +277,15 @@ onUnload(() => {
   stopTicker()
   stop()
 })
+
+onShareAppMessage(() => ({
+  title: '时光倒数 · 记录值得记住的日子',
+  path: '/pages/index/index'
+}))
+
+onShareTimeline(() => ({
+  title: '时光倒数 · 记录值得记住的日子'
+}))
 
 function notifyDue(event) {
   const message = reminderMessage(event)
@@ -150,15 +306,31 @@ function navigateToCreate() {
   uni.navigateTo({ url: '/pages/edit/edit' })
 }
 
+function useTemplate(key) {
+  markGuideSeen()
+  showGuide.value = false
+  uni.navigateTo({ url: `/pages/edit/edit?template=${encodeURIComponent(key)}` })
+}
+
+function finishGuide() {
+  showGuide.value = false
+  markGuideSeen()
+}
+
 function openTools() {
   uni.showActionSheet({
-    itemList: ['导出数据', '导入数据', '关于与隐私'],
+    itemList: ['导出数据', '导入数据', '设置', '关于与隐私'],
     success: res => {
       if (res.tapIndex === 0) exportData()
       else if (res.tapIndex === 1) importData()
-      else if (res.tapIndex === 2) navigateToAbout()
+      else if (res.tapIndex === 2) navigateToSettings()
+      else if (res.tapIndex === 3) navigateToAbout()
     }
   })
+}
+
+function navigateToSettings() {
+  uni.navigateTo({ url: '/pages/settings/settings' })
 }
 
 function navigateToAbout() {
@@ -169,14 +341,8 @@ function exportData() {
   const items = snapshot()
   if (!items.length) return toast('还没有可导出的记录')
 
-  const payload = {
-    app: 'countdown-days',
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    list: items
-  }
   uni.setClipboardData({
-    data: JSON.stringify(payload),
+    data: JSON.stringify(buildExportPayload(items)),
     success: () => toast(`已复制 ${items.length} 条记录到剪贴板`),
     fail: () => toast('复制失败，请重试')
   })
@@ -185,34 +351,12 @@ function exportData() {
 function importData() {
   uni.getClipboardData({
     success: res => {
-      const incoming = parseImport(res.data)
-      if (incoming) confirmImport(incoming)
+      const result = parseImportText(res.data)
+      if (result.error) return toast(result.error)
+      confirmImport(result.items)
     },
     fail: () => toast('读取剪贴板失败，请检查权限')
   })
-}
-
-function parseImport(text) {
-  let parsed
-  try {
-    parsed = JSON.parse(text)
-  } catch (err) {
-    toast('剪贴板中没有可识别的数据')
-    return null
-  }
-
-  const raw = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.list) ? parsed.list : null
-  if (!raw) {
-    toast('剪贴板中没有可识别的数据')
-    return null
-  }
-
-  const incoming = sanitizeEvents(raw)
-  if (!incoming.length) {
-    toast('数据中没有有效的纪念日')
-    return null
-  }
-  return incoming
 }
 
 function confirmImport(incoming) {
@@ -238,13 +382,17 @@ function navigateToDetail(item) {
   uni.navigateTo({ url: `/pages/detail/detail?id=${encodeURIComponent(item.id)}` })
 }
 
+function navigateToShare(item) {
+  uni.navigateTo({ url: `/pages/share/share?id=${encodeURIComponent(item.id)}` })
+}
+
 function handleTap(item) {
   navigateToDetail(item)
 }
 
 function handleMore(item) {
   uni.showActionSheet({
-    itemList: [item.pinned ? '取消置顶' : '置顶', '编辑', '删除'],
+    itemList: [item.pinned ? '取消置顶' : '置顶', '编辑', '分享卡片', '删除'],
     success: res => {
       if (res.tapIndex === 0) {
         togglePin(item.id)
@@ -252,6 +400,8 @@ function handleMore(item) {
       } else if (res.tapIndex === 1) {
         navigateToEdit(item)
       } else if (res.tapIndex === 2) {
+        navigateToShare(item)
+      } else if (res.tapIndex === 3) {
         confirmDelete(item)
       }
     }
@@ -267,6 +417,16 @@ function confirmDelete(item) {
     success: res => {
       if (!res.confirm) return
       removeEvent(item.id)
+      if (!list.value.length) {
+        filter.value = 'all'
+        keyword.value = ''
+        activeTag.value = ''
+      } else if (
+        activeTag.value &&
+        !list.value.some(entry => (entry.tags || []).includes(activeTag.value))
+      ) {
+        activeTag.value = ''
+      }
       syncAll(list.value, notifyDue)
       uni.showToast({ title: '已删除', icon: 'none' })
     }
@@ -318,6 +478,10 @@ function confirmDelete(item) {
   justify-content: center;
 }
 
+.tool-hover {
+  opacity: 0.55;
+}
+
 .header-dots {
   font-size: 40rpx;
   line-height: 1;
@@ -337,6 +501,84 @@ function confirmDelete(item) {
   margin-top: 12rpx;
   font-size: 26rpx;
   color: $app-text-secondary;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  padding: 0 32rpx 18rpx;
+}
+
+.search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  height: 72rpx;
+  padding: 0 22rpx;
+  background: $app-card;
+  border-radius: 999rpx;
+  box-shadow: 0 4rpx 14rpx rgba(31, 36, 48, 0.04);
+}
+
+.search-icon {
+  position: relative;
+  flex-shrink: 0;
+  width: 22rpx;
+  height: 22rpx;
+  margin-right: 14rpx;
+  border: 3rpx solid #a6acb9;
+  border-radius: 50%;
+}
+
+.search-icon::after {
+  content: '';
+  position: absolute;
+  right: -8rpx;
+  bottom: -2rpx;
+  width: 10rpx;
+  height: 3rpx;
+  background: #a6acb9;
+  border-radius: 2rpx;
+  transform: rotate(45deg);
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: $app-text;
+}
+
+.placeholder {
+  color: #a6acb9;
+}
+
+.search-clear {
+  padding: 0 4rpx 0 12rpx;
+  font-size: 34rpx;
+  line-height: 1;
+  color: #b0b6c3;
+}
+
+.view-toggle {
+  display: flex;
+  flex-shrink: 0;
+  margin-left: 14rpx;
+  padding: 4rpx;
+  background: #e9edf6;
+  border-radius: 999rpx;
+}
+
+.view-item {
+  padding: 10rpx 14rpx;
+  font-size: 22rpx;
+  color: $app-text-secondary;
+  border-radius: 999rpx;
+}
+
+.view-item.active {
+  color: #fff;
+  background: $app-primary;
 }
 
 .filters {
@@ -360,8 +602,50 @@ function confirmDelete(item) {
   box-shadow: 0 6rpx 16rpx rgba(91, 141, 239, 0.28);
 }
 
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0 32rpx 18rpx;
+}
+
+.tag-chip {
+  padding: 8rpx 20rpx;
+  margin: 0 12rpx 10rpx 0;
+  font-size: 22rpx;
+  color: $app-text-secondary;
+  background: $app-card;
+  border-radius: 999rpx;
+}
+
+.tag-chip.active {
+  color: $app-primary;
+  background: rgba(91, 141, 239, 0.12);
+}
+
 .list {
   padding: 0 32rpx;
+}
+
+.timeline-group {
+  margin-bottom: 6rpx;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8rpx 4rpx 16rpx;
+}
+
+.timeline-month {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: $app-text;
+}
+
+.timeline-count {
+  font-size: 22rpx;
+  color: $app-text-secondary;
 }
 
 .empty.compact {
@@ -372,7 +656,7 @@ function confirmDelete(item) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 120rpx 0 40rpx;
+  padding: 90rpx 32rpx 40rpx;
 }
 
 .empty-circle {
@@ -407,13 +691,17 @@ function confirmDelete(item) {
 }
 
 .empty-btn {
-  margin-top: 40rpx;
+  margin-top: 28rpx;
   padding: 20rpx 48rpx;
   font-size: 28rpx;
   color: #fff;
   background: $app-primary;
   border-radius: 999rpx;
   box-shadow: 0 8rpx 20rpx rgba(91, 141, 239, 0.25);
+}
+
+.btn-hover {
+  opacity: 0.86;
 }
 
 .fab {
@@ -430,6 +718,11 @@ function confirmDelete(item) {
   border-radius: 50%;
   box-shadow: 0 12rpx 28rpx rgba(91, 141, 239, 0.35);
   z-index: 10;
+}
+
+.fab-hover {
+  opacity: 0.9;
+  transform: scale(0.96);
 }
 
 .fab-plus {

@@ -73,6 +73,11 @@ export function useEvents() {
     return events.value.map(item => ({ ...item }))
   }
 
+  function clearEvents() {
+    events.value = []
+    persist()
+  }
+
   // 以 id 为键合并导入数据，重复记录用导入内容覆盖
   function mergeEvents(incoming) {
     const merged = new Map(events.value.map(item => [item.id, item]))
@@ -91,6 +96,7 @@ export function useEvents() {
     removeEvent,
     togglePin,
     snapshot,
-    mergeEvents
+    mergeEvents,
+    clearEvents
   }
 }
